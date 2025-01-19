@@ -1,129 +1,91 @@
-import os
-import base64
-import hashlib
-import hmac
+# ИСАДИЧЕВА ДАРЬЯ, ДПИ22-1
 
-# Функция для добавления PKCS#7 паддинга
-def pkcs7_padding(data, block_size):
-    pad_len = block_size - (len(data) % block_size)
-    padding = bytes([pad_len] * pad_len)
-    return data + padding
+def caesar_encrypt(shift_key, plaintext):
+    """
+    Шифрует строку с использованием шифра Цезаря.
 
-# Функция для удаления PKCS#7 паддинга
-def pkcs7_unpadding(data):
-    pad_len = data[-1]
-    if pad_len > len(data):
-        raise ValueError("Неверный паддинг.")
-    return data[:-pad_len]
+    :param shift_key: Целочисленный ключ для сдвига
+    :param plaintext: Текст, который требуется зашифровать
+    :return: Зашифрованный текст
+    """
+    # Каждый символ в строке преобразуем в новый, сдвинутый по заданному ключу
+    return ''.join(chr((ord(char) + shift_key) % 65536) for char in plaintext)
 
-# Функция для генерации раундовых ключей из основного ключа
-def generate_round_keys(key, num_rounds, block_size):
-    round_keys = []
-    for i in range(num_rounds):
-        # Используем HMAC-SHA256 для генерации раундовых ключей
-        h = hmac.new(key, i.to_bytes(4, 'big'), hashlib.sha256)
-        round_key = h.digest()[:block_size]
-        round_keys.append(round_key)
-    return round_keys
 
-# Функция F для сети Фейстеля
-def F(Ri, Ki):
-    # Используем HMAC-SHA256 в качестве функции F
-    h = hmac.new(Ki, Ri, hashlib.sha256)
-    return h.digest()[:len(Ri)]
+def caesar_decrypt(shift_key, ciphertext):
+    """
+    Дешифрует строку с использованием шифра Цезаря.
 
-# Функция шифрования с использованием сети Фейстеля
-def encrypt(key, plaintext):
-    block_size = 8  # Размер половины блока в байтах
-    num_rounds = 16  # Количество раундов
+    :param shift_key: Целочисленный ключ для сдвига
+    :param ciphertext: Зашифрованный текст
+    :return: Дешифрованный текст
+    """
+    # Каждый символ в строке возвращаем в исходное положение, применяя обратный сдвиг
+    return ''.join(chr((ord(char) - shift_key) % 65536) for char in ciphertext)
 
-    # Добавляем PKCS#7 паддинг к сообщению
-    plaintext_bytes = pkcs7_padding(plaintext.encode('utf-8'), block_size * 2)
 
-    # Разбиваем сообщение на блоки
-    blocks = [plaintext_bytes[i:i + block_size * 2] for i in range(0, len(plaintext_bytes), block_size * 2)]
+def brute_force_caesar(ciphertext):
+    """
+    Восстанавливает исходный текст, зашифрованный с помощью шифра Цезаря, без знания ключа.
 
-    ciphertext = b''
+    :param ciphertext: Зашифрованный текст
+    :return: Наиболее вероятное восстановленное сообщение
+    """
+    # Считаем частоту появления символов в зашифрованном тексте
+    char_frequency = {}
+    for char in ciphertext:
+        char_frequency[char] = char_frequency.get(char, 0) + 1
 
-    # Генерируем раундовые ключи
-    round_keys = generate_round_keys(key, num_rounds, block_size)
+    # Определяем наиболее часто встречающийся символ
+    most_frequent_char = max(char_frequency, key=char_frequency.get)
 
-    for block in blocks:
-        # Инициализируем L и R
-        L = block[:block_size]
-        R = block[block_size:]
+    # Предполагаем, что наиболее частый символ - это пробел
+    space_ascii = ord(' ')
+    most_frequent_char_ascii = ord(most_frequent_char)
 
-        # Раунды сети Фейстеля
-        for i in range(num_rounds):
-            # Сохраняем значение R для следующей итерации
-            temp_R = R
-            # Вычисляем F функцию
-            f_output = F(R, round_keys[i])
-            # Новый L — это R
-            R = bytes([l ^ f for l, f in zip(L, f_output)])
-            L = temp_R
+    # Рассчитываем предполагаемый ключ
+    guessed_key = (most_frequent_char_ascii - space_ascii) % 65536
 
-        # Объединяем L и R (без финального обмена)
-        ciphertext_block = L + R
-        ciphertext += ciphertext_block
+    # Применяем дешифровку с использованием предполагаемого ключа
+    return caesar_decrypt(guessed_key, ciphertext)
 
-    # Возвращаем шифротекст в виде строки Base64
-    return base64.b64encode(ciphertext).decode('utf-8')
 
-# Функция дешифрования с использованием сети Фейстеля
-def decrypt(key, b64_ciphertext):
-    ciphertext = base64.b64decode(b64_ciphertext)
-    block_size = 8  # Размер половины блока в байтах
-    num_rounds = 16  # Количество раундов
+def vigenere_encrypt_decrypt(text, key):
+    """
+    Шифрует или дешифрует текст с использованием шифра Вижинера с помощью операции XOR.
 
-    # Разбиваем шифротекст на блоки
-    blocks = [ciphertext[i:i + block_size * 2] for i in range(0, len(ciphertext), block_size * 2)]
+    :param text: Текст, который будет зашифрован или дешифрован
+    :param key: Ключ для шифрования/дешифрования
+    :return: Результат операции (зашифрованный или дешифрованный текст)
+    """
+    # Подготовка ключа, повторяя его, чтобы его длина совпала с длиной текста
+    extended_key = (key * ((len(text) // len(key)) + 1))[:len(text)]
+    # Применяем операцию XOR для каждого символа текста с соответствующим символом ключа
+    return ''.join(chr(ord(t) ^ ord(k)) for t, k in zip(text, extended_key))
 
-    plaintext = b''
 
-    # Генерируем раундовые ключи
-    round_keys = generate_round_keys(key, num_rounds, block_size)
-
-    for block in blocks:
-        # Инициализируем L и R
-        L = block[:block_size]
-        R = block[block_size:]
-
-        # Обратные раунды сети Фейстеля
-        for i in reversed(range(num_rounds)):
-            # Сохраняем значение L для следующей итерации
-            temp_L = L
-            # Вычисляем F функцию
-            f_output = F(L, round_keys[i])
-            # Новый R — это L
-            L = bytes([r ^ f for r, f in zip(R, f_output)])
-            R = temp_L
-
-        # Объединяем L и R (без финального обмена)
-        plaintext_block = L + R
-        plaintext += plaintext_block
-
-    # Убираем PKCS#7 паддинг
-    try:
-        plaintext_bytes = pkcs7_unpadding(plaintext)
-    except Exception:
-        raise ValueError("Ошибка при удалении паддинга. Возможно, неверный ключ или поврежден шифротекст.")
-
-    # Преобразуем байты в строку
-    return plaintext_bytes.decode('utf-8')
-
-# Основная часть программы
+# Пример использования шифрования и дешифрования
 if __name__ == "__main__":
-    # Ввод ключа и сообщения
-    key_input = input("Введите ключ для шифрования: ")
-    key_bytes = key_input.encode('utf-8')
+    # Демонстрация работы шифра Цезаря
+    original_message = "Hello, World!"
+    caesar_shift = 3
+    encrypted_message = caesar_encrypt(caesar_shift, original_message)
+    decrypted_message = caesar_decrypt(caesar_shift, encrypted_message)
+    print("Зашифрованное сообщение (Цезарь):", encrypted_message)
+    print("Дешифрованное сообщение (Цезарь):", decrypted_message)
 
-    message = input("Введите текст для шифрования: ")
+    # Пример восстановления текста с помощью частотного анализа (взлом шифра Цезаря)
+    encrypted_example = '''To be, or not to be, that is the question:
+    Whether 'tis nobler in the mind to suffer
+    The slings and arrows of outrageous fortune,
+    Or to take arms against a sea of troubles'''
 
-    # Шифрование
-    encrypted = encrypt(key_bytes, message)
-    print("\nЗашифрованный текст (Base64):\n", encrypted)
+    decrypted_example = brute_force_caesar(encrypted_example)
+    print("Восстановленное сообщение:", decrypted_example)
 
-    # Дешифрование
-    decrypted = decrypt(key_bytes, encrypted)
-    print("\nРасшифрованный текст:\n", decrypted)
+    # Демонстрация работы шифра Вижинера
+    vigenere_secret_key = "mysecretkey"
+    encrypted_vigenere = vigenere_encrypt_decrypt("Hello, World!", vigenere_secret_key)
+    decrypted_vigenere = vigenere_encrypt_decrypt(encrypted_vigenere, vigenere_secret_key)
+    print("Зашифрованное сообщение (Вижинер):", encrypted_vigenere)
+    print("Дешифрованное сообщение (Вижинер):", decrypted_vigenere)
